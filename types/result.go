@@ -28,7 +28,7 @@ type ElectionResult struct {
 	votes     map[string][]*Vote
 }
 
-// MintTime returns the mint time of the corresponding beacon chain block
+// MintTime returns the mint time of the corresponding gravity chain block
 func (r *ElectionResult) MintTime() time.Time {
 	return r.mintTime
 }
