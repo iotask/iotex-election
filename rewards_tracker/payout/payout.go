@@ -134,7 +134,8 @@ func (s *payoutServer) RunPayout(epoch uint64) error {
 			zap.L().Info("Rewards claim", zap.Uint64("UnclaimedReward", unclaimedReward.Uint64()))
 			shash, _ := s.claim(unclaimedReward, 350000, "", addr.String(), prvKey)
 			// TODO: Insert claim to DB
-			// TODO: Daley for rewards to relflat in balance
+			// TODO: Delay for rewards to relflat in balance
+			_ = shash
 		} else {
 			zap.L().Info("No rewards to claim", zap.Uint64("UnclaimedReward", unclaimedReward.Uint64()))
 		}
@@ -215,7 +216,7 @@ func (s *payoutServer) claim(amount *big.Int, gasLimit uint64, data string,
 	}
 	selp := sealed.Proto()
 
-	requestBroadcast := &iotexapi.SendActionRequest{Action: selp}
+	/*requestBroadcast := &iotexapi.SendActionRequest{Action: selp}
 	_, err = s.cli.SendAction(s.ctx, requestBroadcast)
 	if err != nil {
 		sta, ok := status.FromError(err)
@@ -223,7 +224,7 @@ func (s *payoutServer) claim(amount *big.Int, gasLimit uint64, data string,
 			return "", fmt.Errorf(sta.Message())
 		}
 		return "", err
-	}
+	}*/
 	shash := hash.Hash256b(byteutil.Must(proto.Marshal(selp)))
 	return hex.EncodeToString(shash[:]), nil
 }
