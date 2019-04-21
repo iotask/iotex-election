@@ -8,10 +8,11 @@ import (
 )
 
 const (
-	accountsCollection = "accounts"
-	rewardsCollection  = "rewards"
-	epochsCollection   = "epochs"
-	payoutCollection   = "payout"
+	accountsCollection           = "accounts"
+	rewardsCollection            = "rewards"
+	epochsCollection             = "epochs"
+	payoutTransactionsCollection = "payoutTransactions"
+	payoutCollection             = "payout"
 )
 
 // DBConfig defines database config yaml
@@ -24,8 +25,9 @@ type DBConfig struct {
 
 // DataStore is used to implement datastore.
 type DataStore struct {
-	cfg     DBConfig
-	Session *mgo.Session
+	cfg          DBConfig
+	Session      *mgo.Session
+	EpochChannel chan uint64
 }
 
 // NewDataStore creates the main session to our mongodb instance
@@ -52,8 +54,9 @@ func NewDataStore(cfg *DBConfig) (*DataStore, error) {
 
 	session.SetMode(mgo.Monotonic, true)
 	s := &DataStore{
-		cfg:     *cfg,
-		Session: session,
+		cfg:          *cfg,
+		Session:      session,
+		EpochChannel: make(chan uint64),
 	}
 	if err == nil {
 		s.CreateIndex()
@@ -87,12 +90,22 @@ func (s *DataStore) CreateIndex() error {
 		}
 	}
 	// Payout Index
-	for _, key := range []string{"hash", "ioaddress", "date"} {
+	for _, key := range []string{"Epoch", "date"} {
 		index := mgo.Index{
 			Key:        []string{key},
 			Background: true,
 		}
 		if err := session.DB(s.cfg.DatasetName).C(payoutCollection).EnsureIndex(index); err != nil {
+			return err
+		}
+	}
+	// PayoutTransactions Index
+	for _, key := range []string{"payout_id", "hash", "ioaddress", "date"} {
+		index := mgo.Index{
+			Key:        []string{key},
+			Background: true,
+		}
+		if err := session.DB(s.cfg.DatasetName).C(payoutTransactionsCollection).EnsureIndex(index); err != nil {
 			return err
 		}
 	}

@@ -55,20 +55,26 @@ func (e *EpochRewards) CalcRewards(bp0 map[string]string) []interface{} {
 	//var accountRewards []AccountRewards
 	accountRewards := make([]interface{}, 0, len(bp0))
 	for k, v := range bp0 {
-		reward := e.newReward()
-		reward.ETHAddress = k
-		reward.IOAddress = toIoAddr(k)
 		votes, ok := new(big.Int).SetString(v, 10)
 		if !ok {
 			log.Panic("SetString: error")
 		}
-		TotalVotes, _ := new(big.Int).SetString(e.TotalVotes, 10)
-		participation := new(big.Float).Quo(new(big.Float).SetInt(votes), new(big.Float).SetInt(TotalVotes))
-		reward.Participation, _ = participation.Float32()
+		if votes.Cmp(new(big.Int).SetInt64(0)) <= 0 {
+			continue
+		}
+		reward := e.newReward()
+		reward.ETHAddress = k
+		reward.IOAddress = toIoAddr(k)
 
-		reward.BlockRewards = new(big.Int).Div(new(big.Int).Mul(votes, blockPayout), TotalVotes).String()
-		reward.EpochRewards = new(big.Int).Div(new(big.Int).Mul(votes, epochPayout), TotalVotes).String()
-		reward.BonusRewards = new(big.Int).Div(new(big.Int).Mul(votes, bonusPayout), TotalVotes).String()
+		TotalVotes, _ := new(big.Int).SetString(e.TotalVotes, 10)
+		if TotalVotes.Cmp(new(big.Int).SetInt64(0)) > 0 {
+			participation := new(big.Float).Quo(new(big.Float).SetInt(votes), new(big.Float).SetInt(TotalVotes))
+			reward.Participation, _ = participation.Float32()
+			reward.BlockRewards = new(big.Int).Div(new(big.Int).Mul(votes, blockPayout), TotalVotes).String()
+			reward.EpochRewards = new(big.Int).Div(new(big.Int).Mul(votes, epochPayout), TotalVotes).String()
+			reward.BonusRewards = new(big.Int).Div(new(big.Int).Mul(votes, bonusPayout), TotalVotes).String()
+		}
+
 		reward.Stake = votes.String()
 		reward.Update = time.Now()
 		accountRewards = append(accountRewards, reward)
@@ -91,22 +97,29 @@ func (s *DataStore) InsertEpochRewards(e *EpochRewards, r []interface{}) error {
 	session := s.Session.Clone()
 	defer session.Close()
 
-	bulk := session.DB(s.cfg.DatasetName).C(rewardsCollection).Bulk()
-	bulk.Unordered()
-	bulk.Insert(r...)
-	_, err := bulk.Run()
-	if err != nil {
-		zap.L().Error("Error on bulk insert rewards", zap.Error(err))
-		return err
+	if len(r) > 0 {
+		bulk := session.DB(s.cfg.DatasetName).C(rewardsCollection).Bulk()
+		bulk.Unordered()
+		bulk.Insert(r...)
+		_, err := bulk.Run()
+		if err != nil {
+			zap.L().Error("Error on bulk insert rewards", zap.Error(err))
+			return err
+		}
 	}
 
 	e.Update = time.Now()
-	err = session.DB(s.cfg.DatasetName).C(epochsCollection).Insert(e)
+	err := session.DB(s.cfg.DatasetName).C(epochsCollection).Insert(e)
 	if err != nil {
 		zap.L().Error("Error on epoch result insert", zap.Error(err))
 		return err
 	}
-	// TODO: Add balance to account
+	for _, data := range r {
+		err = s.AddToAccount(data.(AccountRewards))
+		if err != nil {
+			zap.L().Fatal("Fail to add into account", zap.String("IOAddress", data.(AccountRewards).IOAddress))
+		}
+	}
 
 	return nil
 }

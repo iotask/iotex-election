@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/golang/protobuf/proto"
@@ -17,6 +18,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/iotexproject/iotex-election/rewards_tracker/datastore"
+	eutil "github.com/iotexproject/iotex-election/util"
 )
 
 // Bucket of votes
@@ -38,12 +40,13 @@ type RewardsConf struct {
 
 // Config defines the config for server
 type Config struct {
-	Endpoint       string      `yaml:"endpoint"`
-	Name           string      `yaml:"name"`
-	StartEpoch     uint64      `yaml:"startEpoch"`
-	BPAddress      string      `yaml:"bpAddress"`
-	RewardsAddress string      `yaml:"rewardsAddress"`
-	Rewards        RewardsConf `yaml:"rewards"`
+	Endpoint       string        `yaml:"endpoint"`
+	Interval       time.Duration `yaml:"interval"`
+	Name           string        `yaml:"name"`
+	StartEpoch     uint64        `yaml:"startEpoch"`
+	BPAddress      string        `yaml:"bpAddress"`
+	RewardsAddress string        `yaml:"rewardsAddress"`
+	Rewards        RewardsConf   `yaml:"rewards"`
 }
 
 // Server defines the interface of the epochs server
@@ -65,7 +68,7 @@ type server struct {
 
 // NewServer returns an implementation IoTeX epochs tracker
 func NewServer(cfg *Config, cfgCommittee *committee.Config, ds *datastore.DataStore) (Server, error) {
-	conn, err := util.ConnectToEndpoint()
+	conn, err := util.ConnectToEndpoint(true)
 	if err != nil {
 		zap.L().Fatal(err.Error())
 	}
@@ -103,6 +106,7 @@ func (s *server) Start(ctx context.Context) error {
 	zap.L().Info("catching up via network")
 	// get last epoch
 	tipEpoch, err := s.TipEpoch()
+	zap.L().Info("Current Epoch Tip", zap.Uint64("CurrentTip", tipEpoch))
 	if err != nil {
 		return errors.Wrap(err, "failed to get tip height")
 	}
@@ -127,14 +131,13 @@ func (s *server) Start(ctx context.Context) error {
 			}
 		}
 	}()
-	s.SubscribeNewEpoch(epochChan, reportChan, s.terminate)
+	s.SubscribeNewEpoch(epochChan, reportChan, s.terminate, tipEpoch)
 	return nil
 }
 
-func (s *server) SubscribeNewEpoch(epoch chan uint64, report chan error, unsubscribe chan bool) {
+func (s *server) SubscribeNewEpoch(epoch chan uint64, report chan error, unsubscribe chan bool, lastEpoch uint64) {
 	// TODO: Calc timeout by block till next epoch
-	ticker := time.NewTicker(60 * time.Second)
-	lastEpoch := uint64(0)
+	ticker := time.NewTicker(s.cfg.Interval * time.Second)
 	go func() {
 		for {
 			select {
@@ -145,6 +148,7 @@ func (s *server) SubscribeNewEpoch(epoch chan uint64, report chan error, unsubsc
 				if tipEpoch, err := s.tipEpoch(lastEpoch); err != nil {
 					report <- err
 				} else {
+					zap.L().Warn("LOG INterval")
 					epoch <- tipEpoch
 				}
 			}
@@ -154,11 +158,14 @@ func (s *server) SubscribeNewEpoch(epoch chan uint64, report chan error, unsubsc
 
 func (s *server) Stop(ctx context.Context) error {
 	// TODO: Stop server
+	s.terminate <- true
 	return nil
 }
 
 func (s *server) Sync(epoch uint64) error {
-	zap.L().Info("New epoch found, syncing", zap.Uint64("Epoch", epoch))
+	if err := s.sync(epoch); err != nil {
+		return errors.Wrap(err, "failed to catch up via network")
+	}
 	return nil
 }
 
@@ -174,7 +181,7 @@ func (s *server) tipEpoch(lastEpoch uint64) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	num := chainResponse.GetChainMeta().GetEpoch().GetNum() - 1
+	num := chainResponse.GetChainMeta().GetEpoch().GetNum()
 	if num == 0 {
 		return 0, errors.New("failed to get tip epoch")
 	}
@@ -185,7 +192,10 @@ func (s *server) tipEpoch(lastEpoch uint64) (uint64, error) {
 }
 
 func (s *server) sync(tipEpoch uint64) error {
-	zap.L().Info("new epoch", zap.Uint64("Epoch", tipEpoch))
+	if tipEpoch <= s.currentEpoch {
+		zap.L().Info("No new updates...")
+		return nil
+	}
 	for nextEpoch := s.currentEpoch + 1; nextEpoch < tipEpoch; nextEpoch++ {
 		zap.L().Info("Downloading...", zap.Uint64("Epoch", nextEpoch))
 		epochMetaRequest := &iotexapi.GetEpochMetaRequest{EpochNumber: nextEpoch}
@@ -245,6 +255,8 @@ func (s *server) sync(tipEpoch uint64) error {
 		accountRewards := epochRewards.CalcRewards(bp0)
 		// Insert into DB
 		s.ds.InsertEpochRewards(&epochRewards, accountRewards)
+		s.currentEpoch = nextEpoch
+		s.ds.EpochChannel <- nextEpoch
 	}
 	return nil
 }
@@ -290,6 +302,7 @@ func (s *server) getRewardsFromEpoch(epoch uint64) *big.Int {
 	receiptRequest := &iotexapi.GetReceiptByActionRequest{
 		ActionHash: actionsResponse.ActionInfo[0].ActHash,
 	}
+	zap.L().Info("Getting receipt of", zap.String("Hash", actionsResponse.ActionInfo[0].ActHash))
 	receiptResponse, err := s.cli.GetReceiptByAction(s.ctx, receiptRequest)
 	if err != nil {
 		zap.L().Fatal(err.Error())
@@ -307,7 +320,7 @@ func (s *server) getRewardsFromEpoch(epoch uint64) *big.Int {
 			return epochReward
 		}
 	}
-	zap.L().Info(fmt.Sprintf("No rewards for %s in epoch %d", s.cfg.RewardsAddress, epoch))
+	zap.L().Info(fmt.Sprintf("No epoch rewards for %s in epoch %d", s.cfg.RewardsAddress, epoch))
 	return big.NewInt(0)
 }
 
@@ -339,7 +352,7 @@ func process(buckets []Bucket) (bps map[string](map[string]string), totalBPsVote
 			_, ook := vs[bucket.ethAddr]
 			if ook {
 				// Already have this eth addr, need to combine the stakes
-				vs[bucket.ethAddr] = addStrs(vs[bucket.ethAddr], bucket.stakes)
+				vs[bucket.ethAddr] = eutil.AddStrs(vs[bucket.ethAddr], bucket.stakes)
 			} else {
 				vs[bucket.ethAddr] = bucket.stakes
 			}
@@ -353,6 +366,9 @@ func process(buckets []Bucket) (bps map[string](map[string]string), totalBPsVote
 			vs[bucket.ethAddr] = bucket.stakes
 			name := "UNVOTED"
 			if len(bucket.bpname) > 0 {
+				if strings.Contains(bucket.bpname, "iorobotbp") {
+					continue
+				}
 				name = bucket.bpname
 
 				votes, ok := new(big.Int).SetString(bucket.stakes, 10)
@@ -378,7 +394,8 @@ func getBP(name string, bps map[string](map[string]string)) (map[string]string, 
 
 	bp0, ok := bps[string(bpHex)]
 	if !ok {
-		zap.L().Fatal("invalid bp name: " + name)
+		zap.L().Error("invalid bp name: " + name)
+		return make(map[string]string, 0), new(big.Int).SetInt64(0)
 	}
 	totalVotes := big.NewInt(0)
 	for _, v := range bp0 {
@@ -389,20 +406,4 @@ func getBP(name string, bps map[string](map[string]string)) (map[string]string, 
 		totalVotes.Add(totalVotes, votes)
 	}
 	return bp0, totalVotes
-}
-
-func addStrs(a, b string) string {
-	aa := new(big.Int)
-	aaa, ok := aa.SetString(a, 10)
-	if !ok {
-		log.Panic("SetString: error")
-	}
-	bb := new(big.Int)
-	bbb, ok := bb.SetString(b, 10)
-	if !ok {
-		log.Panic("SetString: error")
-	}
-	c := new(big.Int)
-	c.Add(aaa, bbb)
-	return c.String()
 }

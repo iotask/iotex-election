@@ -8,6 +8,8 @@ package util
 
 import (
 	"encoding/binary"
+	"log"
+	"math/big"
 )
 
 func Uint64ToBytes(u uint64) []byte {
@@ -26,4 +28,20 @@ func CopyBytes(b []byte) []byte {
 	copy(c, b)
 
 	return c
+}
+
+func AddStrs(a, b string) string {
+	aa := new(big.Int)
+	aaa, ok := aa.SetString(a, 10)
+	if !ok {
+		log.Panic("SetString: error")
+	}
+	bb := new(big.Int)
+	bbb, ok := bb.SetString(b, 10)
+	if !ok {
+		log.Panic("SetString: error")
+	}
+	c := new(big.Int)
+	c.Add(aaa, bbb)
+	return c.String()
 }

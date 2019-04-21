@@ -2,6 +2,11 @@ package datastore
 
 import (
 	"time"
+
+	"go.uber.org/zap"
+	"gopkg.in/mgo.v2/bson"
+
+	eutil "github.com/iotexproject/iotex-election/util"
 )
 
 // Account set
@@ -9,9 +14,9 @@ type Account struct {
 	Name              string
 	ETHAddress        string
 	IOAddress         string
-	LastStake         uint64
+	LastStake         string
 	LastParticipation float32
-	Balance           float64
+	Balance           string
 	Update            time.Time
 }
 
@@ -31,4 +36,56 @@ type AccountRewards struct {
 	BonusRewards    string
 	Date            time.Time
 	Update          time.Time
+}
+
+// AddToAccount value to Account valance
+func (s *DataStore) AddToAccount(reward AccountRewards) error {
+	session := s.Session.Clone()
+	defer session.Close()
+	totalRewards := reward.GetTotalRewards()
+	if totalRewards == "0" {
+		return nil
+	}
+	zap.L().Info("Adding rewards to account", zap.String("IOAddress", reward.IOAddress),
+		zap.String("BlockRewards", reward.BlockRewards), zap.String("EpochRewards", reward.EpochRewards),
+		zap.String("BonusRewards", reward.EpochRewards))
+
+	result := new(Account)
+	err := session.DB(s.cfg.DatasetName).C(accountsCollection).Find(bson.M{"ioaddress": reward.IOAddress}).One(&result)
+	if err != nil {
+
+		if err.Error() == "not found" {
+			result = &Account{IOAddress: reward.IOAddress, ETHAddress: reward.ETHAddress,
+				Balance: totalRewards, LastStake: reward.Stake, LastParticipation: reward.Participation,
+				Update: time.Now()}
+			return session.DB(s.cfg.DatasetName).C(accountsCollection).Insert(result)
+		}
+		zap.L().Fatal("Error adding to account: " + err.Error())
+		zap.L().Fatal("Error adding to account", zap.Error(err))
+	}
+	totalRewards = eutil.AddStrs(totalRewards, result.Balance)
+	return session.DB(s.cfg.DatasetName).C(accountsCollection).Update(bson.M{"ioaddress": reward.IOAddress},
+		bson.M{"$set": bson.M{"balance": totalRewards, "laststake": reward.Stake,
+			"lastparticipation": reward.Participation, "update": time.Now()}})
+}
+
+// GetTotalRewards return sum of Block,Epoch and Bonus rewards in string
+func (reward *AccountRewards) GetTotalRewards() string {
+	totalRewards := eutil.AddStrs(reward.BlockRewards, reward.EpochRewards)
+	totalRewards = eutil.AddStrs(totalRewards, reward.BonusRewards)
+	return totalRewards
+}
+
+// GetOpenOpenBalance get accounts with open balance
+func (s *DataStore) GetOpenOpenBalance() ([]Account, error) {
+	session := s.Session.Clone()
+	defer session.Close()
+
+	var result []Account
+	err := session.DB(s.cfg.DatasetName).C(accountsCollection).Find(bson.M{"balance": bson.M{"$ne": "0"}}).All(&result)
+	if err != nil {
+		zap.L().Error("Error loading open balance accounts", zap.Error(err))
+		return nil, err
+	}
+	return result, nil
 }

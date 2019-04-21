@@ -9,6 +9,7 @@ import (
 	"github.com/iotexproject/iotex-election/committee"
 	"github.com/iotexproject/iotex-election/rewards_tracker/datastore"
 	"github.com/iotexproject/iotex-election/rewards_tracker/epochscontroller"
+	"github.com/iotexproject/iotex-election/rewards_tracker/payout"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	yaml "gopkg.in/yaml.v2"
@@ -20,6 +21,7 @@ type Config struct {
 	Port             int                     `yaml:"port"`
 	EpochsController epochscontroller.Config `yaml:"epochsController"`
 	Committee        committee.Config        `yaml:"committee"`
+	Payout           payout.PayoutConf       `yaml:"payout"`
 }
 
 func main() {
@@ -50,6 +52,15 @@ func main() {
 		log.Fatalf("Error connecting to datastore: %v", err)
 	}
 	defer ds.Session.Close()
+
+	// Start payout
+	payoutServer, err := payout.NewServer(&config.Payout, ds)
+	if err != nil {
+		zap.L().Fatal("failed to instantiate Payout Server", zap.Error(err))
+	}
+	if err := payoutServer.Start(context.Background()); err != nil {
+		zap.L().Fatal("failed to start Payout server", zap.Error(err))
+	}
 
 	// Create epochs controller
 	epochsController, err := epochscontroller.NewServer(&config.EpochsController, &config.Committee, ds)

@@ -8,6 +8,7 @@ port: 8089
 
 epochsController:
   endpoint: api.iotex.one:80
+  interval: 600
   name: BPNAME
   startEpoch: 0
   bpAddress: BPADDRESS
@@ -18,6 +19,12 @@ epochsController:
     blockPercentage: 80
     epochPercentage: 80
     bonusPercentage: 80
+
+payout:
+  interval: 24 # number of epochs 24epochs~24h
+  minAmount: 10000000000000000000
+  claim: true
+  privateKey: REWARDSPRIVATEKEY #Account Private key fro Rewards Claim and Payout
 
 committee:
   numOfRetries: 8
