@@ -236,13 +236,14 @@ func (s *server) sync(tipEpoch uint64) error {
 						ChainBlockRewards).String()
 				}
 				// if BP in the 36, set fundation bonus rewards
-				epochRewards.TotalBonusRewards = epochRewards.ChainBonusRewards
+				// get from log
+				// epochRewards.TotalBonusRewards = epochRewards.ChainBonusRewards
 				epochRewards.Producer = true
 				break
 			}
 		}
 		// Get vote rewards from Epoch
-		epRewards := s.getRewardsFromEpoch(nextEpoch)
+		epRewards, fRewards := s.getRewardsFromEpoch(nextEpoch)
 		buckets := s.dump(epochMetaResponse.EpochData.GetGravityChainStartHeight())
 		// process rewards
 		bps, totalBPsVotes := process(buckets)
@@ -250,6 +251,7 @@ func (s *server) sync(tipEpoch uint64) error {
 		epochRewards.TotalBPsVotes = totalBPsVotes.String()
 		epochRewards.TotalVotes = totalVotes.String()
 		epochRewards.TotalEpochRewards = epRewards.String()
+		epochRewards.TotalBonusRewards = fRewards.String()
 		// compute
 		accountRewards := epochRewards.CalcRewards(bp0)
 		// Insert into DB
@@ -260,7 +262,7 @@ func (s *server) sync(tipEpoch uint64) error {
 	return nil
 }
 
-func (s *server) getRewardsFromEpoch(epoch uint64) *big.Int {
+func (s *server) getRewardsFromEpoch(epoch uint64) (*big.Int, *big.Int) {
 	// last block from epoch
 	lastBlock := epoch * 24 * 15 // numDelegate: 24, subEpoch: 15 -> 360 blocks per epoch
 	blockRequest := &iotexapi.GetBlockMetasRequest{
@@ -290,7 +292,7 @@ func (s *server) getRewardsFromEpoch(epoch uint64) *big.Int {
 	actionsResponse, err := s.cli.GetActions(s.ctx, actionsRequest)
 	if err != nil {
 		zap.L().Error("Error getting action", zap.Error(err))
-		return big.NewInt(0)
+		return nil, big.NewInt(0)
 	}
 	if len(actionsResponse.ActionInfo) == 0 {
 		zap.L().Fatal("failed to get last action in epoch", zap.Uint64("Epoch", epoch))
@@ -306,21 +308,40 @@ func (s *server) getRewardsFromEpoch(epoch uint64) *big.Int {
 	if err != nil {
 		zap.L().Fatal(err.Error())
 	}
+
+	var epochReward *big.Int
+	var fReward *big.Int
 	for _, receiptLog := range receiptResponse.ReceiptInfo.Receipt.Logs {
 		var rewardLog rewardingpb.RewardLog
+		var ok bool
 		if err := proto.Unmarshal(receiptLog.Data, &rewardLog); err != nil {
 			zap.L().Fatal(err.Error())
 		}
-		if rewardLog.Type == rewardingpb.RewardLog_EPOCH_REWARD && rewardLog.Addr == s.cfg.RewardsAddress {
-			epochReward, ok := new(big.Int).SetString(rewardLog.Amount, 10)
-			if !ok {
-				zap.L().Fatal("SetString: error")
+		if rewardLog.Addr == s.cfg.RewardsAddress {
+			if rewardLog.Type == rewardingpb.RewardLog_EPOCH_REWARD {
+				epochReward, ok = new(big.Int).SetString(rewardLog.Amount, 10)
+				if !ok {
+					zap.L().Fatal("SetString: error")
+				}
+			} else if rewardLog.Type == rewardingpb.RewardLog_FOUNDATION_BONUS {
+				fReward, ok = new(big.Int).SetString(rewardLog.Amount, 10)
+				if !ok {
+					log.Fatalln("SetString: error")
+				}
 			}
-			return epochReward
 		}
 	}
-	zap.L().Info(fmt.Sprintf("No epoch rewards for %s in epoch %d", s.cfg.RewardsAddress, epoch))
-	return big.NewInt(0)
+
+	if epochReward == nil {
+		zap.L().Info(fmt.Sprintf("No epoch rewards for %s in epoch %d", s.cfg.RewardsAddress, epoch))
+		epochReward = big.NewInt(0)
+	}
+	if fReward == nil {
+		zap.L().Info(fmt.Sprintf("No bonus rewards for %s in epoch %d", s.cfg.RewardsAddress, epoch))
+		fReward = big.NewInt(0)
+	}
+
+	return epochReward, fReward
 }
 
 func (s *server) dump(height uint64) (buckets []Bucket) {
