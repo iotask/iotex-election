@@ -48,7 +48,7 @@ func (s *DataStore) AddToAccount(reward AccountRewards) error {
 	}
 	zap.L().Info("Adding rewards to account", zap.String("IOAddress", reward.IOAddress),
 		zap.String("BlockRewards", reward.BlockRewards), zap.String("EpochRewards", reward.EpochRewards),
-		zap.String("BonusRewards", reward.EpochRewards))
+		zap.String("BonusRewards", reward.BonusRewards))
 
 	result := new(Account)
 	err := session.DB(s.cfg.DatasetName).C(accountsCollection).Find(bson.M{"ioaddress": reward.IOAddress}).One(&result)
@@ -91,8 +91,8 @@ func (reward *AccountRewards) GetTotalRewards() string {
 	return totalRewards
 }
 
-// GetOpenOpenBalance get accounts with open balance
-func (s *DataStore) GetOpenOpenBalance() ([]Account, error) {
+// GetOpenBalances get accounts with open balance
+func (s *DataStore) GetOpenBalances() ([]Account, error) {
 	session := s.Session.Clone()
 	defer session.Close()
 
@@ -101,6 +101,19 @@ func (s *DataStore) GetOpenOpenBalance() ([]Account, error) {
 	if err != nil {
 		zap.L().Error("Error loading open balance accounts", zap.Error(err))
 		return nil, err
+	}
+	return result, nil
+}
+
+// GetAccount get account by address
+func (s *DataStore) GetAccount(address string) (Account, error) {
+	session := s.Session.Clone()
+	defer session.Close()
+
+	var result Account
+	err := session.DB(s.cfg.DatasetName).C(accountsCollection).Find(bson.M{"ioaddress": address}).One(&result)
+	if err != nil {
+		zap.L().Error("Account not found", zap.Error(err))
 	}
 	return result, nil
 }
