@@ -85,23 +85,23 @@ func (s *payoutServer) Start(ctx context.Context) error {
 		s.lastPayoutEpoch = lastPayout.Epoch
 	}
 	s.ctx = ctx
-	if s.cfg.Interval > 0 {
-		go func() {
-			for {
-				select {
-				case <-s.terminate:
-					s.terminate <- true
-					return
-				case epoch := <-s.ds.EpochChannel:
-					if (epoch - s.lastPayoutEpoch) > s.cfg.Interval {
-						zap.L().Info("Staring payout", zap.Uint64("PayoutEpoch", epoch))
-						s.RunPayout(epoch)
-						s.lastPayoutEpoch = epoch
-					}
+
+	go func() {
+		for {
+			select {
+			case <-s.terminate:
+				s.terminate <- true
+				return
+			case epoch := <-s.ds.EpochChannel:
+				if (s.cfg.Interval > 0) && ((epoch - s.lastPayoutEpoch) > s.cfg.Interval) {
+					zap.L().Info("Staring payout", zap.Uint64("PayoutEpoch", epoch))
+					s.RunPayout(epoch)
+					s.lastPayoutEpoch = epoch
 				}
 			}
-		}()
-	}
+		}
+	}()
+
 	return nil
 }
 
@@ -112,7 +112,7 @@ func (s *payoutServer) Stop(ctx context.Context) error {
 }
 
 func (s *payoutServer) RunPayout(epoch uint64) error {
-	accs, err := s.ds.GetOpenOpenBalance()
+	accs, err := s.ds.GetOpenBalances()
 	if err != nil {
 		return err
 	}
