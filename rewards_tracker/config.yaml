@@ -7,7 +7,6 @@ db:
 port: 8089
 
 epochsController:
-  endpoint: api.iotex.one:80
   interval: 600
   name: BPNAME
   startEpoch: 0
@@ -21,10 +20,16 @@ epochsController:
     bonusPercentage: 80
 
 payout:
-  interval: 24 # number of epochs 24epochs~24h
+  interval: 0 # number of epochs 24epochs~24h 0 to disable
   minAmount: 10000000000000000000
   claim: true
+  gasLimit: 35000
   privateKey: REWARDSPRIVATEKEY #Account Private key fro Rewards Claim and Payout
+  ioPayout: false
+  ethAPI: https://mainnet.infura.io
+  ethToken: 0x6fB3e0A217407EFFf7Ca062D46c26E5d60a14d69
+  ethPrivateKey: ETHPRIVATEKEY
+  ethGasLimit: 150000
 
 committee:
   numOfRetries: 8

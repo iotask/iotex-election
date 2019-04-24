@@ -69,7 +69,7 @@ func main() {
 	}
 	zap.L().Info("New Epoch Controller created")
 	if err := epochsController.Start(context.Background()); err != nil {
-		zap.L().Fatal("failed to start ranking server", zap.Error(err))
+		zap.L().Fatal("failed to start epoch controller", zap.Error(err))
 	}
 	zap.L().Info("Service started")
 	defer epochsController.Stop(context.Background())

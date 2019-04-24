@@ -60,13 +60,28 @@ func (s *DataStore) AddToAccount(reward AccountRewards) error {
 				Update: time.Now()}
 			return session.DB(s.cfg.DatasetName).C(accountsCollection).Insert(result)
 		}
-		zap.L().Fatal("Error adding to account: " + err.Error())
 		zap.L().Fatal("Error adding to account", zap.Error(err))
 	}
+
 	totalRewards = eutil.AddStrs(totalRewards, result.Balance)
 	return session.DB(s.cfg.DatasetName).C(accountsCollection).Update(bson.M{"ioaddress": reward.IOAddress},
 		bson.M{"$set": bson.M{"balance": totalRewards, "laststake": reward.Stake,
 			"lastparticipation": reward.Participation, "update": time.Now()}})
+}
+
+// AddToBalance add to existent account balance
+func (s *DataStore) AddToBalance(ioAddr string, amount string) error {
+	session := s.Session.Clone()
+	defer session.Close()
+
+	result := new(Account)
+	err := session.DB(s.cfg.DatasetName).C(accountsCollection).Find(bson.M{"ioaddress": ioAddr}).One(&result)
+	if err != nil {
+		zap.L().Fatal("Error adding to account", zap.Error(err))
+	}
+	newAmount := eutil.AddStrs(amount, result.Balance)
+	return session.DB(s.cfg.DatasetName).C(accountsCollection).Update(bson.M{"ioaddress": ioAddr},
+		bson.M{"$set": bson.M{"balance": newAmount, "update": time.Now()}})
 }
 
 // GetTotalRewards return sum of Block,Epoch and Bonus rewards in string

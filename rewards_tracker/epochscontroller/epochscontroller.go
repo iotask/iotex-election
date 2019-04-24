@@ -40,7 +40,6 @@ type RewardsConf struct {
 
 // Config defines the config for server
 type Config struct {
-	Endpoint       string        `yaml:"endpoint"`
 	Interval       time.Duration `yaml:"interval"`
 	Name           string        `yaml:"name"`
 	StartEpoch     uint64        `yaml:"startEpoch"`
@@ -174,9 +173,7 @@ func (s *server) TipEpoch() (uint64, error) {
 }
 
 func (s *server) tipEpoch(lastEpoch uint64) (uint64, error) {
-	// TODO: if not higher
 	chainRequest := &iotexapi.GetChainMetaRequest{}
-	//ctx := context.Background()
 	chainResponse, err := s.cli.GetChainMeta(s.ctx, chainRequest)
 	if err != nil {
 		return 0, err
@@ -185,9 +182,11 @@ func (s *server) tipEpoch(lastEpoch uint64) (uint64, error) {
 	if num == 0 {
 		return 0, errors.New("failed to get tip epoch")
 	}
-	if num > lastEpoch {
+	if num >= lastEpoch {
 		return num, nil
 	}
+	// Warning if tip lower than last epoch
+	zap.L().Warn("Something wrong with last epoch", zap.Uint64("LastEpoch", lastEpoch), zap.Uint64("Epoch", num))
 	return num, nil
 }
 

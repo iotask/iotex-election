@@ -13,6 +13,7 @@ const (
 	epochsCollection             = "epochs"
 	payoutTransactionsCollection = "payoutTransactions"
 	payoutCollection             = "payout"
+	claimsCollection             = "claims"
 )
 
 // DBConfig defines database config yaml
