@@ -9,7 +9,7 @@ import (
 
 // Payout set
 type Payout struct {
-	_id               bson.ObjectId
+	ID                bson.ObjectId `json:"id" bson:"_id"`
 	Epoch             uint64
 	Date              time.Time
 	TotalTransactions uint64
@@ -43,11 +43,12 @@ func (s *DataStore) InsertPayout(payout *Payout) (*bson.ObjectId, error) {
 	session := s.Session.Clone()
 	defer session.Close()
 	id := bson.NewObjectId()
+	payout.ID = id
 	err := session.DB(s.cfg.DatasetName).C(payoutCollection).Insert(payout)
 	if err != nil {
+		zap.L().Error("err", zap.Error(err))
 		return nil, err
 	}
-
 	return &id, nil
 }
 
