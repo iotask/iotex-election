@@ -23,6 +23,7 @@ type EpochRewards struct {
 	TotalBlockRewards string
 	TotalEpochRewards string
 	TotalBonusRewards string
+	TotalExtraRewards string
 	BlockPercentage   uint64
 	EpochPercentage   uint64
 	BonusPercentage   uint64

@@ -215,6 +215,7 @@ func (s *server) sync(tipEpoch uint64) error {
 			TotalBlockRewards: "0",
 			TotalEpochRewards: "0",
 			TotalBonusRewards: "0",
+			TotalExtraRewards: "0",
 
 			ChainBlockRewards: s.cfg.Rewards.ChainBlockRewards,
 			ChainBonusRewards: s.cfg.Rewards.ChainBonusRewards,
@@ -259,6 +260,8 @@ func (s *server) sync(tipEpoch uint64) error {
 		s.currentEpoch = nextEpoch
 		s.ds.EpochChannel <- nextEpoch
 	}
+	// force check for payout
+	s.ds.EpochChannel <- s.currentEpoch
 	return nil
 }
 

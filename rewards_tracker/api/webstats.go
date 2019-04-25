@@ -57,14 +57,14 @@ func getOpenBalance(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(f)
 }
 
-func startWeb(webPort string) {
+func startWeb(webPort int) {
 	r := mux.NewRouter()
 
 	// Rewards
 	r.HandleFunc("/api/open-balance", getOpenBalance).Methods("GET")
 	r.HandleFunc("/api/account/{address}", getAccount).Methods("GET")
 
-	if err := http.ListenAndServe(webPort, r); err != nil {
+	if err := http.ListenAndServe("0.0.0.0:"+strconv.Itoa(webPort), r); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -109,5 +109,5 @@ func main() {
 	defer ds.Session.Close()
 
 	// start API
-	startWeb(strconv.Itoa(config.Port))
+	startWeb(config.Port)
 }

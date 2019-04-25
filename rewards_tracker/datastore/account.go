@@ -34,6 +34,7 @@ type AccountRewards struct {
 	BlockRewards    string
 	EpochRewards    string
 	BonusRewards    string
+	ExtraRewards    string
 	Date            time.Time
 	Update          time.Time
 }

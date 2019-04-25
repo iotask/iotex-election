@@ -93,7 +93,7 @@ func (s *payoutServer) Start(ctx context.Context) error {
 				s.terminate <- true
 				return
 			case epoch := <-s.ds.EpochChannel:
-				if (s.cfg.Interval > 0) && ((epoch - s.lastPayoutEpoch) > s.cfg.Interval) {
+				if (s.cfg.Interval > 0) && ((epoch - s.lastPayoutEpoch) >= s.cfg.Interval) {
 					zap.L().Info("Staring payout", zap.Uint64("PayoutEpoch", epoch))
 					s.RunPayout(epoch)
 					s.lastPayoutEpoch = epoch
@@ -140,15 +140,28 @@ func (s *payoutServer) RunPayout(epoch uint64) error {
 	}
 	zap.L().Info("Address", zap.String("Address", addr.String()))
 
-	// Check Rewards Balance
-	balance, err := s.getAccountBalance(addr.String())
-	if err != nil {
-		zap.L().Error("Error checking account current balance", zap.Error(err))
+	// Check Rewards Balance && load ETH keys if needed
+	var balance string
+	var ethClient *ethclient.Client
+	var prvKeyETH keypair.PrivateKey
+	if !s.cfg.IOPayout {
+		ethClient, err = ethclient.Dial(s.cfg.EthAPI)
+		if err != nil {
+			zap.L().Fatal("Cannot dial to ETH", zap.Error(err))
+		}
+		prvKeyETH, _ = keypair.HexStringToPrivateKey(s.cfg.EthPrivateKey)
+		// TODO: get ETH token balance
+		balance = "1000000000000000000000000"
+	} else {
+		balance, err = s.getAccountBalance(addr.String())
+		if err != nil {
+			zap.L().Error("Error checking IO account current balance", zap.Error(err))
+		}
 	}
 	zap.L().Info("Current Balance", zap.String("Balance", balance))
 
 	// Check Claim Rewards
-	if s.cfg.Claim {
+	if s.cfg.Claim && !s.cfg.IOPayout {
 		unclaimedReward, err := s.unclaimedBalance(addr.String())
 		if err != nil {
 			zap.L().Error("Cannot check unclaimed rewards balance", zap.Error(err))
@@ -185,7 +198,7 @@ func (s *payoutServer) RunPayout(epoch uint64) error {
 			zap.String("TotalPay", total.String()), zap.String("NetBalance", new(big.Int).Sub(balanceN, total).String()))
 		return errors.New("Current balance smaller than total payout")
 	}
-	zap.L().Info("Pay run", zap.Uint64("Total", total.Uint64()),
+	zap.L().Info("Pay run", zap.String("Total", total.String()),
 		zap.Int("Accounts", len(toPay)), zap.String("CurrentBalance", balanceN.String()),
 		zap.String("NetBalance", new(big.Int).Sub(balanceN, total).String()))
 	// Add payout summary into DB
@@ -193,16 +206,6 @@ func (s *payoutServer) RunPayout(epoch uint64) error {
 		TotalTransactions: uint64(len(toPay)), TotalRewards: total.String()})
 	if err != nil {
 		zap.L().Fatal("Cannot add Payout into DB", zap.Error(err))
-	}
-
-	var ethClient *ethclient.Client
-	var prvKeyETH keypair.PrivateKey
-	if !s.cfg.IOPayout {
-		ethClient, err = ethclient.Dial(s.cfg.EthAPI)
-		if err != nil {
-			zap.L().Fatal("Cannot dial to ETH", zap.Error(err))
-		}
-		prvKeyETH, _ = keypair.HexStringToPrivateKey(s.cfg.EthPrivateKey)
 	}
 
 	for k := range toPay {
@@ -226,6 +229,9 @@ func (s *payoutServer) RunPayout(epoch uint64) error {
 			}
 			p.Hash = tHash
 			p.Network = "ETH"
+			// sleep 20s between transactions
+			time.Sleep(20 * time.Second)
+
 		}
 	}
 	// Save into DB
