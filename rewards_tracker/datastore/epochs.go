@@ -136,3 +136,16 @@ func (s *DataStore) GetLastEpoch() (*EpochRewards, error) {
 	}
 	return result, err
 }
+
+// GetEpochRewards get account by address
+func (s *DataStore) GetEpochRewards() ([]interface{}, error) {
+	session := s.Session.Clone()
+	defer session.Close()
+
+	var result []interface{}
+	err := session.DB(s.cfg.DatasetName).C(epochsCollection).Find(nil).Sort("-epoch").Limit(100).All(&result)
+	if err != nil {
+		zap.L().Error("Erro loading epochs rewards", zap.Error(err))
+	}
+	return result, nil
+}

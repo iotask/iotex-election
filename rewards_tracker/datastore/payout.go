@@ -1,6 +1,7 @@
 package datastore
 
 import (
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -78,4 +79,42 @@ func (s *DataStore) InsertPayoutTransactions(p []interface{}) error {
 		}
 	}
 	return nil
+}
+
+// GetPayout get last epoch rewards
+func (s *DataStore) GetPayout(address string) ([]interface{}, error) {
+	session := s.Session.Clone()
+	defer session.Close()
+	query := bson.M{}
+	if strings.HasPrefix(address, "io") {
+		query = bson.M{"ioaddress": address}
+	} else {
+		query = bson.M{"ethaddress": strings.ToLower(strings.TrimPrefix(address, "0x"))}
+	}
+
+	pipeline := []bson.M{
+		{"$match": query},
+		{"$lookup": bson.M{"from": "payout",
+			"localField":   "payoutid",
+			"foreignField": "_id",
+			"as":           "payout",
+		}},
+		{"$unwind": "$payout"},
+		{"$project": bson.M{"ethaddress": 1,
+			"ioaddress":    1,
+			"hash":         1,
+			"network":      1,
+			"amount":       1,
+			"payout.date":  1,
+			"payout.epoch": 1,
+		}},
+		{"$sort": bson.D{{"payout.epoch", -1}}},
+	}
+	var result []interface{}
+	err := session.DB(s.cfg.DatasetName).C(payoutTransactionsCollection).Pipe(pipeline).All(&result)
+	if err != nil {
+		zap.L().Error("Fail to get address payout", zap.Error(err))
+		return nil, err
+	}
+	return result, err
 }

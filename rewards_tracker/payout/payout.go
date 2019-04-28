@@ -30,16 +30,17 @@ import (
 
 // PayoutConf defines payout
 type PayoutConf struct {
-	Interval      uint64 `yaml:"interval"`
-	MinAmount     string `yaml:"minAmount"`
-	Claim         bool   `yaml:"claim"`
-	GasLimit      uint64 `yaml:"gasLimit"`
-	PrivateKey    string `yaml:"privateKey"`
-	IOPayout      bool   `yaml:"ioPayout"`
-	EthAPI        string `yaml:"ethAPI"`
-	EthPrivateKey string `yaml:"ethPrivateKey"`
-	EthToken      string `yaml:"ethToken"`
-	EthGasLimit   uint64 `yaml:"ethGasLimit"`
+	Interval        uint64 `yaml:"interval"`
+	MinAmount       string `yaml:"minAmount"`
+	Claim           bool   `yaml:"claim"`
+	GasLimit        uint64 `yaml:"gasLimit"`
+	PrivateKey      string `yaml:"privateKey"`
+	IOPayout        bool   `yaml:"ioPayout"`
+	EthAPI          string `yaml:"ethAPI"`
+	EthPrivateKey   string `yaml:"ethPrivateKey"`
+	EthToken        string `yaml:"ethToken"`
+	EthGasLimit     uint64 `yaml:"ethGasLimit"`
+	EthSendInterval uint64 `yaml:"ethSendInterval"`
 }
 
 // PayoutServer defines the interface of the epochs server
@@ -229,8 +230,8 @@ func (s *payoutServer) RunPayout(epoch uint64) error {
 			}
 			p.Hash = tHash
 			p.Network = "ETH"
-			// sleep 20s between transactions
-			time.Sleep(20 * time.Second)
+			// sleep between transactions
+			time.Sleep(time.Duration(s.cfg.EthSendInterval) * time.Second)
 
 		}
 	}
@@ -514,6 +515,10 @@ func (s *payoutServer) ethTransfer(client *ethclient.Client, recipient string, a
 		zap.L().Error("failed to get gas price", zap.Error(err))
 		return "", err
 	}
+	tmp := big.NewInt(20)
+	tmp.Mul(tmp, gasPrice)
+	tmp.Quo(tmp, big.NewInt(100))
+	gasPrice.Add(gasPrice, tmp)
 	zap.L().Info("Gas Prince", zap.String("Gas", gasPrice.String()))
 
 	/*gasLimit, err := client.EstimateGas(s.ctx, ethereum.CallMsg{
@@ -528,13 +533,15 @@ func (s *payoutServer) ethTransfer(client *ethclient.Client, recipient string, a
 
 	value := big.NewInt(0) // in wei (0 eth)
 	tx := types.NewTransaction(nonce, tokenAddress, value, gasLimit, gasPrice, data)
+	zap.L().Info("Sending...", zap.String("To", toAddress.String()),
+		zap.String("Amount", amount.String()), zap.String("Hash", tx.Hash().Hex()))
 
 	chainID, err := client.NetworkID(s.ctx)
 	if err != nil {
 		zap.L().Error("failed to get chain ID", zap.Error(err))
 		return "", err
 	}
-	zap.L().Info("Chain ID", zap.Uint64("ID", chainID.Uint64()))
+
 	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainID), prvKey.EcdsaPrivateKey())
 	if err != nil {
 		zap.L().Error("failed sign TX", zap.Error(err))

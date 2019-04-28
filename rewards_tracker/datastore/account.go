@@ -1,6 +1,7 @@
 package datastore
 
 import (
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -110,9 +111,34 @@ func (s *DataStore) GetOpenBalances() ([]Account, error) {
 func (s *DataStore) GetAccount(address string) (Account, error) {
 	session := s.Session.Clone()
 	defer session.Close()
+	query := bson.M{}
+	if strings.HasPrefix(address, "io") {
+		query = bson.M{"ioaddress": address}
+	} else {
+		query = bson.M{"ethaddress": strings.ToLower(strings.TrimPrefix(address, "0x"))}
+	}
 
 	var result Account
-	err := session.DB(s.cfg.DatasetName).C(accountsCollection).Find(bson.M{"ioaddress": address}).One(&result)
+	err := session.DB(s.cfg.DatasetName).C(accountsCollection).Find(query).One(&result)
+	if err != nil {
+		zap.L().Error("Account not found", zap.Error(err))
+	}
+	return result, nil
+}
+
+// GetRewards get account by address
+func (s *DataStore) GetRewards(address string) ([]interface{}, error) {
+	session := s.Session.Clone()
+	defer session.Close()
+	query := bson.M{}
+	if strings.HasPrefix(address, "io") {
+		query = bson.M{"ioaddress": address}
+	} else {
+		query = bson.M{"ethaddress": strings.ToLower(strings.TrimPrefix(address, "0x"))}
+	}
+
+	var result []interface{}
+	err := session.DB(s.cfg.DatasetName).C(rewardsCollection).Find(query).Sort("-epoch").Limit(100).All(&result)
 	if err != nil {
 		zap.L().Error("Account not found", zap.Error(err))
 	}
